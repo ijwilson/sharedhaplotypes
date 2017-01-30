@@ -1,0 +1,46 @@
+---
+title: "Shared Haplotypes around a mutation"
+author: "Ian Wilson"
+date: "30 January 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#### obtain the pedigree information for the 1000 genomes samples
+
+```
+wget ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20110521/supporting/phase1_samples_integrated_20101123.ped
+```
+
+## use tabix to get a copy of the data between positions 178404570 and 179734924 on chromosome 2
+
+```
+tabix -fh ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/phase1/analysis_results/integrated_call_sets/ALL.chr2.integrated_phase1_v3.20101123.snps_indels_svs.genotypes.vcf.gz 2:178404570-179734924 > temporary.vcf
+```
+
+#### transform to get phased output in IMPUTE format
+
+```
+vcftools --vcf temporary.vcf --IMPUTE --out impute1K 
+```
+
+Examine these positions a bit more
+
+```{r read_positions}
+positions_1K <- read.table("impute1K.impute.legend", header=TRUE)
+positions_HMERF <- read.csv("HMERF_Haplotype.csv")
+```
+we have read `r nrow(positions)` positions from the 1000 genomes.
+
+### 
+
+
+We now have 
+
+## subselect the genotypes at the positions given by the first column of file.  
+## Don't use rs numbers as some rs numbers are new to 1000 genomes
+## output gives a report of matches, mismatches  
+python filter1000genomes.py > reportmatches.txt
