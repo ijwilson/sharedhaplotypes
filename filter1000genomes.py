@@ -1,9 +1,10 @@
 #!/usr/bin/env python
-import sys
-data=[a.strip().split(",") for a in open("HMERF_Haplotype.csv")]
 
-header,data = data[0],data[1:]
-outHMERF = open("HMERFmatch1K.csv","w")
+import sys
+data=[a.strip().split(",") for a in open("tmpfiles/HMERF_Haplotype.csv")]
+
+header, data = data[0], data[1:]
+outHMERF = open("tmpfiles/HMERFmatch1K.csv","w")
 outHMERF.write(",".join(h for h in header)+"\n")
 ## lets step through the positions available 
 positions=dict()
@@ -11,9 +12,9 @@ positions=dict()
 for index,b in enumerate(data):
     positions[int(b[0])] = (index,b)
 
-infile = open("impute1K.impute.legend")
+infile = open(sys.argv[1]+".impute.legend") 
 header=infile.readline()
-outlegend = open("match1K.legend","w")
+outlegend = open(sys.argv[2]+".legend","w")
 outlegend.write(header)
 
 seen=set()
@@ -58,8 +59,8 @@ outHMERF.close()
 missing=sorted(missing)
 print "============================="
 # now lets try to filter the data
-infile = open("impute1K.impute.hap")
-outfile = open("match1K","w")
+infile = open(sys.argv[1] + ".impute.hap")
+outfile = open(sys.argv[2], "w")
 for index,line in enumerate(infile):
     if index in indices:
         b = line.strip().split()
