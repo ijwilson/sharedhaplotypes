@@ -33,10 +33,12 @@ Examine these positions a bit more
 positions_1K <- read.table("impute1K.impute.legend", header=TRUE)
 positions_HMERF <- read.csv("HMERF_Haplotype.csv")
 ```
-we have read `r nrow(positions)` positions from the 1000 genomes.
+we have read `r nrow(positions_1K)` positions from the 1000 genomes.
+
+Use python to stip out the usable SNPs from the 1000 genomes.
 
 
-```{python}
+```{python extract_positions}
 import sys
 data=[a.strip().split(",") for a in open("HMERF_Haplotype.csv")]
 
@@ -110,9 +112,35 @@ infile.close()
 ### Prepare data for PHASE
 
 
-```{r}
+```{r transform_input_for_phase}
 source("Transform_PHASE.R")
 ```
 We now have 
 
+### Run PHASE
 
+```{r runphase, cache=TRUE}
+system2("PHASE",args=c("-kphase1K.known","phase1K.inp","phase1K.out"), stdout = "phase.stdout", stderr = "phase.stderr")
+```
+
+### Load the results
+
+```{r load_results}
+source("read_phase_functions.R")
+# Read the pairs output.  We have columns
+pairs <- readpairs("phase1K.out_pairs")
+colnames(pairs) <- c("name", "hap1", "hap2", "pprob")
+## These are all the pairs, we need to extract our hmerf samples
+hmerf_samples <- colnames(hmerf)[-c(1:2)]
+hmerf_pairs <- pairs[pairs$name %in% hmerf_samples,]
+control_pairs <- pairs[!(pairs$name %in% hmerf_samples),]
+## These pairs all have the same posterior probalility - which
+## is just as well as they are all supposed to be phased.
+## Get raw data
+raw <- t(as.matrix(read.table("match1K", stringsAsFactors = FALSE)))
+
+## Split the phased output.
+
+
+
+```
