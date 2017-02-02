@@ -10,11 +10,13 @@ tabix -fh  ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/ALL.chr2.ph
 ## transform to get phased output in IMPUTE format
 vcftools --phased --vcf tmpfiles/temporary3.vcf --IMPUTE --out tmpfiles/impute1K3 
 vcftools --phased --vcf tmpfiles/temporary1.vcf --IMPUTE --out tmpfiles/impute1K1 
+rm tmpfiles/temporary?.vcf 
 
 ## subselect the genotypes at the positions given by the first column of file.  
 ## Don't use rs numbers as some rs numbers are new to 1000 genomes
 ## output gives a report of matches, mismatches  
-python filter1000genomes.py > reportmatches.txt
+python filter1000genomes.py tmpfiles/impute1K3 tmpfiles/match1K3 > reportmatches3.txt
+python filter1000genomes.py tmpfiles/impute1K1 tmpfiles/match1K1 > reportmatches1.txt
 ## (optional) prepare data for haploview
 #R --vanilla < haploview_phase.R
 ## prepare data for PHASE

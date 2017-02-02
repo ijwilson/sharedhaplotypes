@@ -12,12 +12,12 @@ knitr::opts_chunk$set(echo = TRUE)
 #### obtain the pedigree information for the 1000 genomes samples, both phase 1 and phase 3
 
 ```{r}
+if (!dir.exists("./tmpfiles")) dir.create("./tmpfiles/")
 ped_phase1 <- read.csv("ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20110521/supporting/phase1_samples_integrated_20101123.ped", header=TRUE, sep="\t", quote="")
 ped_phase3 <- read.csv("ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/integrated_call_samples_v2.20130502.ALL.ped", header=TRUE, sep="\t", quote="")
 
 download.file("ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20110521/supporting/phase1_samples_integrated_20101123.ped","tmpfiles/phase1_samples_integrated_20101123.ped")
 download.file("ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/integrated_call_samples_v2.20130502.ALL.ped", "tmpfiles/integrated_call_samples_v2.20130502.ALL.ped")
-
 ```
 
 ## use tabix to get a copy of the data between positions 178404570 and 179734924 on chromosome 2
@@ -32,26 +32,89 @@ scanTabix(open(tb), )
 ```
 I can't make this work so better to use the command line for this
 
+#### phase 1 and phase 3
+
 ```
-tabix -fh ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/phase1/analysis_results/integrated_call_sets/ALL.chr2.integrated_phase1_v3.20101123.snps_indels_svs.genotypes.vcf.gz 2:178404570-179734924 > tmpfiles/temporary.vcf
+tabix -fh ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/phase1/analysis_results/integrated_call_sets/ALL.chr2.integrated_phase1_v3.20101123.snps_indels_svs.genotypes.vcf.gz 2:178404570-179734924 > tmpfiles/temporary1.vcf
+tabix -fh  ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/ALL.chr2.phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcf.gz 2:178404570-179734924 > tmpfiles/temporary3.vcf
 ```
+
+#### phase 3
 
 #### transform to get phased output in IMPUTE format
 
 ```
-vcftools --phased --vcf temporary.vcf --IMPUTE --out impute1K 
-rm temporary.vcf 
+vcftools --phased --vcf tmpfiles/temporary3.vcf --IMPUTE --out tmpfiles/impute1K3 
+vcftools --phased --vcf tmpfiles/temporary1.vcf --IMPUTE --out tmpfiles/impute1K1 
+rm tmpfiles/temporary?.vcf 
 ```
 
 Examine these positions a bit more
 
 ```{r read_positions}
-positions_1K <- read.table("impute1K.impute.legend", header=TRUE)
+positions_1K1 <- read.table("tmpfiles/impute1K1.impute.legend", header=TRUE)
+positions_1K3 <- read.table("tmpfiles/impute1K3.impute.legend", header=TRUE)
+
 positions_HMERF <- read.csv("HMERF_Haplotype.csv")
 ```
-we have read `r nrow(positions_1K)` positions from the 1000 genomes.
+we have read `r nrow(positions_1K1)` positions from the phase 1 1000 genomes and `r nrow(positions_1K3)` 
+from the phase 3.
 
-Use python to stip out the usable SNPs from the 1000 genomes.
+Use I used python before to strip out the usable SNPs from the 1000 genomes, but I want to make the code more general 
+so I use `data.table` within R.
+
+
+```{r extract_positionsr}
+library(data.table)
+library(pander)
+options(scipen=999)
+
+
+## should really write a function.
+
+data_hmerf <- fread("HMERF_Haplotype.csv", showProgress = FALSE)
+setkey(data_hmerf, position)
+dbfile <- "tmpfiles/impute1K3.impute.legend"
+out <- "match1K3"
+
+data_1K <- fread(dbfile, showProgress = FALSE)
+data_1K[, rownum := 1:nrow(data_1K)]
+setkey(data_1K, pos)
+matching_positions <- data_hmerf[data_1K, nomatch=0]
+fwrite(matching_positions, file = paste("tmpfiles/HMERF", out, ".csv", sep=""), showProgress = FALSE)
+
+d <- rbind(matching_positions, data_hmerf[position==179410829], fill=TRUE)
+setkey(d, position)
+
+fwrite(
+  matching_positions[,.(ID, pos=position, allele0, allele1)],
+  file=paste("tmpfiles/", out, ".legend", sep=""), showProgress = FALSE
+)
+
+code <- list()
+for (i in 1:nrow(matching_positions)) {
+  code[[i]] <- c(matching_positions$allele0[i], matching_positions$allele1[i])
+}
+
+pander(matching_positions, caption="Present in HMERF and 1K", split.table=Inf)
+
+missing <- data_hmerf[!(position %in% data_1K$pos)]
+pander(data.table(missing), caption="Present in HMERF and missing in 1K Genomes")
+
+all_1K <- fread("tmpfiles/impute1K3.impute.hap", showProgress = FALSE)
+all_1K <- all_1K[matching_positions$rownum,]
+
+genotypes <- matrix("", nrow=nrow(matching_positions), ncol=ncol(all_1K))
+for (index in 1:nrow(matching_positions)) {
+  row <- as.integer(all_1K[index, ])+1
+  genotypes[index,] <- code[[index]][row]
+}
+
+fwrite(data.table(genotypes), sep=" ", col.names = FALSE, file="match1K")
+
+outfile = open("match1K","w")
+
+```
 
 
 ```{python extract_positions}
