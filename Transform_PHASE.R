@@ -51,9 +51,6 @@ transform_phase <- function(input_stem, target_data, ped, output_stem="phase1K",
   }
   
   raw <- t(as.matrix(read.table(input_stem)))
-  ## now add the mutation - first add the column
-  raw <- raw[,c(1:14,1,15:ncol(raw))]
-  raw[,15] <- "A"
   PhasedLine = paste(rep("0",ncol(raw)),collapse=" ")
   
   raw <- apply(raw,1,paste,collapse=" ")
@@ -65,11 +62,8 @@ transform_phase <- function(input_stem, target_data, ped, output_stem="phase1K",
     cat(raw[i,],sep="\n", file=f)
     cat(PhasedLine,"\n", file=known)
   }
-  
   close(f)
   close(known)
-  
-  
 }
 
 ped3 <- read.csv("data/integrated_call_samples_v2.20130502.ALL.ped", sep="\t", header=TRUE, quote="", stringsAsFactors = FALSE)

@@ -55,7 +55,7 @@ Examine these positions a bit more
 positions_1K1 <- read.table("tmpfiles/impute1K1.impute.legend", header=TRUE)
 positions_1K3 <- read.table("tmpfiles/impute1K3.impute.legend", header=TRUE)
 
-positions_HMERF <- read.csv("HMERF_Haplotype.csv")
+positions_HMERF <- read.csv("data/HMERF_Haplotype.csv")
 ```
 we have read `r nrow(positions_1K1)` positions from the phase 1 1000 genomes and `r nrow(positions_1K3)` 
 from the phase 3.
@@ -68,27 +68,20 @@ so I use `data.table` within R.
 library(data.table)
 library(pander)
 
-extract_positions <- function(target_file, dbstem, out) {
+extract_positions <- function(target_file, dbstem, out, mutation_position=179410829, mutation_wild_type="A") {
+#  target_file= "data/HMERF_Haplotype.csv" 
+#  dbstem = "tmpfiles/impute1K1.impute" 
+#  out= "match1K_phase1" 
+#  mutation_position=179410829
+ # mutation_wild_type="A"
   data_hmerf <- fread(target_file, showProgress = FALSE)
   setkey(data_hmerf, position)
 
   data_1K <- fread(paste(dbstem, "legend", sep="."), showProgress = FALSE)
   data_1K[, rownum := 1:nrow(data_1K)]
   setkey(data_1K, pos)
-  matching_positions <- data_hmerf[data_1K, nomatch=0]
+  matching_positions <- data_hmerf[data_1K, nomatch=0]  
   missing_positions <- data_hmerf[!(position %in% data_1K$pos)]
-
-  mp <- copy(matching_positions)                         ## need to make a copy so that I can remove columns
-  mp[, c("ID","allele0","allele1","rownum") := NULL]
-  fwrite(mp, file = paste("tmpfiles/HMERF", out, ".csv", sep=""), showProgress = FALSE)
-
-  d <- rbind(matching_positions, data_hmerf[position==179410829], fill=TRUE)
-  setkey(d, position)
-
-  fwrite(
-    matching_positions[,.(ID, pos=position, allele0, allele1)],
-    file=paste("tmpfiles/", out, ".legend", sep=""), showProgress = FALSE
-  )
 
   code <- list()
   for (i in 1:nrow(matching_positions)) 
@@ -98,16 +91,37 @@ extract_positions <- function(target_file, dbstem, out) {
   cat(sample_names, "\n",sep="\n", file=paste("tmpfiles/", out,".individuals", sep="" ))
   fread(paste(dbstem, "hap.indv", sep="."), showProgress = FALSE)
   
-  
   all_1K <- fread(paste(dbstem, "hap", sep="."), showProgress = FALSE)
   all_1K <- all_1K[matching_positions$rownum,]
 
-  genotypes <- matrix("", nrow=nrow(matching_positions), ncol=ncol(all_1K))
+  genotypes <- matrix("", nrow=nrow(matching_positions)+1, ncol=ncol(all_1K))
   for (index in 1:nrow(matching_positions)) {
     row <- as.integer(all_1K[index, ])+1
     genotypes[index,] <- code[[index]][row]
   }
+  genotypes[nrow(matching_positions)+1, ] <- mutation_wild_type   ## add mutation
+  
+  mp <- copy(matching_positions)                         ## need to make a copy so that I can remove columns
+  add <- data_hmerf[position==mutation_position]
+  allele <- strsplit(as.character(add[,3]),'')[[1]]
+  mutation_variant <- ifelse(mutation_wild_type==allele[1], allele[2], allele[1])
+  add$allele0 <- mutation_wild_type
+  add$allele1 <- mutation_variant 
+  add$ID <- "targetmutation"
 
+  mp <- rbind(mp, add, fill=TRUE )
+  o <- order(mp$position)
+  genotypes <- genotypes[o,]
+  mp <- mp[o,]
+  
+   
+  fwrite(
+    mp[,.(ID, pos=position, allele0, allele1)],
+    file=paste("tmpfiles/", out, ".legend", sep=""), showProgress = FALSE
+  )
+  
+  mp[, c("ID","allele0","allele1","rownum") := NULL]     ## And put the mutation back
+  fwrite(mp, file = paste("tmpfiles/HMERF", out, ".csv", sep=""), showProgress = FALSE)
   fwrite(data.table(genotypes), sep=" ", col.names = FALSE, file=paste("tmpfiles", out, sep="/"))
   list(missing=missing_positions, matching=matching_positions)
 }
@@ -131,7 +145,7 @@ pander(summary1$matching, caption="Present in HMERF and 1K", split.table=Inf)
 ```
 ## Phase 3 data
 
-```{r phase_1_table}
+```{r phase_3_table}
 pander(summary3$missing, caption="Present in HMERF and missing in 1K Genomes", split.table=Inf)
 pander(summary3$matching, caption="Present in HMERF and 1K", split.table=Inf)
 ```
@@ -149,8 +163,9 @@ We now have
 
 ### Run PHASE
 
-```{r runphase, cache=TRUE}
+```{r runphase, cache=TRUE, eval=FALSE}
 system2("PHASE",args=c("-ktmpfiles/phase1k_p1.known","tmpfiles/phase1k_p1.inp","tmpfiles/phase1k_p1.out"), stdout = "phase.stdout", stderr = "phase.stderr")
+system2("PHASE",args=c("-ktmpfiles/phase1k_p3.known","tmpfiles/phase1k_p3.inp","tmpfiles/phase1k_p3.out"), stdout = "phase.3.stdout", stderr = "phase.3.stderr")
 ```
 
 ### Load the results
@@ -158,7 +173,7 @@ system2("PHASE",args=c("-ktmpfiles/phase1k_p1.known","tmpfiles/phase1k_p1.inp","
 ```{r load_results}
 source("read_phase_functions.R")
 # Read the pairs output.  We have columns
-pairs <- readpairs("phase1K.out_pairs")
+pairs <- readpairs("tmpfiles/phase1k_p3.out_pairs")
 colnames(pairs) <- c("name", "hap1", "hap2", "pprob")
 ## These are all the pairs, we need to extract our hmerf samples
 hmerf_samples <- colnames(hmerf)[-c(1:2)]
@@ -167,7 +182,7 @@ control_pairs <- pairs[!(pairs$name %in% hmerf_samples),]
 ## These pairs all have the same posterior probalility - which
 ## is just as well as they are all supposed to be phased.
 ## Get raw data
-raw <- t(as.matrix(read.table("match1K", stringsAsFactors = FALSE)))
+#raw <- t(as.matrix(read.table("match1K", stringsAsFactors = FALSE)))
 
 ## Split the phased output.
 
