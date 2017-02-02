@@ -21,10 +21,10 @@ locusSNP <- function(col) {
 }
 ####################################################################
 
-transform_phase <- function(impute_stem, target_data, ped, output_stem="phase1K", target_pops=c("CEU", "GBR")) {
+transform_phase <- function(input_stem, target_data, ped, output_stem="phase1K", target_pops=c("CEU", "GBR")) {
   is_unrelated <- ped[,3]=="0" & ped[,4]=="0"
   ped = ped[is_unrelated & ped$Population %in% target_pops,]
-  all_sample_names <- scan(paste(imput_stem,"impute.hap.indv",sep="."), what=character(0))
+  all_sample_names <- scan(paste(input_stem,"individuals", sep="."), what=character(0))
   keep <- all_sample_names %in% ped$Individual.ID
   used_sample_names <- all_sample_names[keep]
   
@@ -50,7 +50,7 @@ transform_phase <- function(impute_stem, target_data, ped, output_stem="phase1K"
     cat(rep("*",ncol(vals)),"\n",file=known)
   }
   
-  raw <- t(as.matrix(read.table("match1K")))
+  raw <- t(as.matrix(read.table(input_stem)))
   ## now add the mutation - first add the column
   raw <- raw[,c(1:14,1,15:ncol(raw))]
   raw[,15] <- "A"
@@ -71,60 +71,14 @@ transform_phase <- function(impute_stem, target_data, ped, output_stem="phase1K"
   
   
 }
-ped <- read.csv("phase1_samples_integrated_20101123.ped", sep="\t", header=TRUE, quote="", stringsAsFactors = FALSE)
-hmerf <- read.csv("HMERFmatch1K.csv", stringsAsFactors = FALSE)
 
-transform_phase("impute1K", hmerf, ped)
+ped3 <- read.csv("data/integrated_call_samples_v2.20130502.ALL.ped", sep="\t", header=TRUE, quote="", stringsAsFactors = FALSE)
+hmerf <- read.csv("tmpfiles/HMERFmatch1K_phase3.csv", stringsAsFactors = FALSE)
+transform_phase("tmpfiles/match1K_phase3", hmerf, ped3, "tmpfiles/phase1k_p3")
 
 
-## Read the pedigree file
-ped <- read.csv("phase1_samples_integrated_20101123.ped", sep="\t", header=TRUE, quote="", stringsAsFactors = FALSE)
-is_parent <- ped[,3]=="0" & ped[,4]=="0"
-ped = ped[is_parent & ped$Population %in% c("CEU","GBR"),]
-all_sample_names <- scan("impute1K.impute.hap.indv", what=character(0))
-keep <- all_sample_names %in% ped$Individual.ID
-used_sample_names <- all_sample_names[keep]
+ped <- read.csv("data/phase1_samples_integrated_20101123.ped", sep="\t", header=TRUE, quote="", stringsAsFactors = FALSE)
+hmerf <- read.csv("tmpfiles/HMERFmatch1K_phase1.csv", stringsAsFactors = FALSE)
 
-## Now read the Hmerf data
-hmerf <- read.csv("HMERFmatch1K.csv", stringsAsFactors = FALSE)
-## Open the output files
-f <- file("phase1K.inp", "w")
-known <- file("phase1K.known", "w")        ## phase known
-
-n <- ncol(hmerf) -2
-markers <- nrow(hmerf)
-SNPs = locusSNP(hmerf[, 3])       ## the most complete data
-
-cat(n+length(used_sample_names), markers, sep="\n", file=f)
-cat("P ",hmerf[,1],"\n",file=f)
-loc = rep("M", markers)
-loc[SNPs] <- "S"
-cat(loc,"\n",file=f)
-for (ind in 1:n) { 
-  col=ind+2
-  cat(colnames(hmerf)[col],"\n", file=f)
-  vals <- mapply(Splitmarkers, hmerf[, col], SNPs)
-  cat(vals[1,],"\n",file=f)
-  cat(vals[2,],"\n",file=f)
-  cat(rep("*",ncol(vals)),"\n",file=known)
-}
-
-raw <- t(as.matrix(read.table("match1K")))
-## now add the mutation - first add the column
-raw <- raw[,c(1:14,1,15:ncol(raw))]
-raw[,15] <- "A"
-PhasedLine = paste(rep("0",ncol(raw)),collapse=" ")
-
-raw <- apply(raw,1,paste,collapse=" ")
-raw <- matrix(raw,ncol=2,byrow=T)
-raw <- raw[keep,]
-
-for (i in 1:length(used_sample_names)) {
-  cat(used_sample_names[i], "\n", file=f)
-  cat(raw[i,],sep="\n", file=f)
-  cat(PhasedLine,"\n", file=known)
-}
-
-close(f)
-close(known)
+transform_phase("tmpfiles/match1K_phase1", hmerf, ped, "tmpfiles/phase1k_p1")
 

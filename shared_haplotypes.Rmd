@@ -11,18 +11,20 @@ knitr::opts_chunk$set(echo = TRUE)
 
 #### obtain the pedigree information for the 1000 genomes samples, both phase 1 and phase 3
 
-```{r}
+```{r readped}
 if (!dir.exists("./tmpfiles")) dir.create("./tmpfiles/")
 ped_phase1 <- read.csv("ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20110521/supporting/phase1_samples_integrated_20101123.ped", header=TRUE, sep="\t", quote="")
 ped_phase3 <- read.csv("ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/integrated_call_samples_v2.20130502.ALL.ped", header=TRUE, sep="\t", quote="")
 
-download.file("ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20110521/supporting/phase1_samples_integrated_20101123.ped","tmpfiles/phase1_samples_integrated_20101123.ped")
-download.file("ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/integrated_call_samples_v2.20130502.ALL.ped", "tmpfiles/integrated_call_samples_v2.20130502.ALL.ped")
+if (!file.exists("data/phase1_samples_integrated_20101123.ped")) {
+  download.file("ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20110521/supporting/phase1_samples_integrated_20101123.ped","data/phase1_samples_integrated_20101123.ped")
+  download.file("ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/integrated_call_samples_v2.20130502.ALL.ped", "data/integrated_call_samples_v2.20130502.ALL.ped")
+}
 ```
 
 ## use tabix to get a copy of the data between positions 178404570 and 179734924 on chromosome 2
 
-```{r, eval=FALSE}
+```{r trylocaltabix, eval=FALSE}
 library(Rsamtools)
 url <- "ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/phase1/analysis_results/integrated_call_sets/ALL.chr2.integrated_phase1_v3.20101123.snps_indels_svs.genotypes.vcf.gz"
 range <- GRanges("2", IRanges(178404570,179734924))
@@ -38,8 +40,6 @@ I can't make this work so better to use the command line for this
 tabix -fh ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/phase1/analysis_results/integrated_call_sets/ALL.chr2.integrated_phase1_v3.20101123.snps_indels_svs.genotypes.vcf.gz 2:178404570-179734924 > tmpfiles/temporary1.vcf
 tabix -fh  ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/ALL.chr2.phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcf.gz 2:178404570-179734924 > tmpfiles/temporary3.vcf
 ```
-
-#### phase 3
 
 #### transform to get phased output in IMPUTE format
 
@@ -64,186 +64,83 @@ Use I used python before to strip out the usable SNPs from the 1000 genomes, but
 so I use `data.table` within R.
 
 
-```{r extract_positionsr}
+```{r extract_positions}
 library(data.table)
 library(pander)
+
+extract_positions <- function(target_file, dbstem, out) {
+  data_hmerf <- fread(target_file, showProgress = FALSE)
+  setkey(data_hmerf, position)
+
+  data_1K <- fread(paste(dbstem, "legend", sep="."), showProgress = FALSE)
+  data_1K[, rownum := 1:nrow(data_1K)]
+  setkey(data_1K, pos)
+  matching_positions <- data_hmerf[data_1K, nomatch=0]
+  missing_positions <- data_hmerf[!(position %in% data_1K$pos)]
+
+  mp <- copy(matching_positions)                         ## need to make a copy so that I can remove columns
+  mp[, c("ID","allele0","allele1","rownum") := NULL]
+  fwrite(mp, file = paste("tmpfiles/HMERF", out, ".csv", sep=""), showProgress = FALSE)
+
+  d <- rbind(matching_positions, data_hmerf[position==179410829], fill=TRUE)
+  setkey(d, position)
+
+  fwrite(
+    matching_positions[,.(ID, pos=position, allele0, allele1)],
+    file=paste("tmpfiles/", out, ".legend", sep=""), showProgress = FALSE
+  )
+
+  code <- list()
+  for (i in 1:nrow(matching_positions)) 
+    code[[i]] <- c(matching_positions$allele0[i], matching_positions$allele1[i])
+
+  sample_names <-  scan(paste(dbstem,"hap.indv",sep="."), what=character(0))
+  cat(sample_names, "\n",sep="\n", file=paste("tmpfiles/", out,".individuals", sep="" ))
+  fread(paste(dbstem, "hap.indv", sep="."), showProgress = FALSE)
+  
+  
+  all_1K <- fread(paste(dbstem, "hap", sep="."), showProgress = FALSE)
+  all_1K <- all_1K[matching_positions$rownum,]
+
+  genotypes <- matrix("", nrow=nrow(matching_positions), ncol=ncol(all_1K))
+  for (index in 1:nrow(matching_positions)) {
+    row <- as.integer(all_1K[index, ])+1
+    genotypes[index,] <- code[[index]][row]
+  }
+
+  fwrite(data.table(genotypes), sep=" ", col.names = FALSE, file=paste("tmpfiles", out, sep="/"))
+  list(missing=missing_positions, matching=matching_positions)
+}
+
+
+dbstem1 <- "tmpfiles/impute1K1.impute"
+out <- "match1K3"
+target <- "data/HMERF_Haplotype.csv" 
 options(scipen=999)
 
-
-## should really write a function.
-
-data_hmerf <- fread("HMERF_Haplotype.csv", showProgress = FALSE)
-setkey(data_hmerf, position)
-dbfile <- "tmpfiles/impute1K3.impute.legend"
-out <- "match1K3"
-
-data_1K <- fread(dbfile, showProgress = FALSE)
-data_1K[, rownum := 1:nrow(data_1K)]
-setkey(data_1K, pos)
-matching_positions <- data_hmerf[data_1K, nomatch=0]
-fwrite(matching_positions, file = paste("tmpfiles/HMERF", out, ".csv", sep=""), showProgress = FALSE)
-
-d <- rbind(matching_positions, data_hmerf[position==179410829], fill=TRUE)
-setkey(d, position)
-
-fwrite(
-  matching_positions[,.(ID, pos=position, allele0, allele1)],
-  file=paste("tmpfiles/", out, ".legend", sep=""), showProgress = FALSE
-)
-
-code <- list()
-for (i in 1:nrow(matching_positions)) {
-  code[[i]] <- c(matching_positions$allele0[i], matching_positions$allele1[i])
-}
-
-pander(matching_positions, caption="Present in HMERF and 1K", split.table=Inf)
-
-missing <- data_hmerf[!(position %in% data_1K$pos)]
-pander(data.table(missing), caption="Present in HMERF and missing in 1K Genomes")
-
-all_1K <- fread("tmpfiles/impute1K3.impute.hap", showProgress = FALSE)
-all_1K <- all_1K[matching_positions$rownum,]
-
-genotypes <- matrix("", nrow=nrow(matching_positions), ncol=ncol(all_1K))
-for (index in 1:nrow(matching_positions)) {
-  row <- as.integer(all_1K[index, ])+1
-  genotypes[index,] <- code[[index]][row]
-}
-
-fwrite(data.table(genotypes), sep=" ", col.names = FALSE, file="match1K")
-
-outfile = open("match1K","w")
+summary1 <- extract_positions(target, "tmpfiles/impute1K1.impute", "match1K_phase1")
+summary3 <- extract_positions(target, "tmpfiles/impute1K3.impute", "match1K_phase3")
 
 ```
 
+## Phase 1 data
 
-```{python extract_positions}
-import sys
-data=[a.strip().split(",") for a in open("HMERF_Haplotype.csv")]
+```{r phase_1_table}
+pander(summary1$missing, caption="Present in HMERF and missing in 1K Genomes", split.table=Inf)
+pander(summary1$matching, caption="Present in HMERF and 1K", split.table=Inf)
+```
+## Phase 3 data
 
-header, data = data[0], data[1:]
-outHMERF = open("HMERFmatch1K.csv","w")
-outHMERF.write(",".join(h for h in header)+"\n")
-## step through the positions available 
-positions=dict()
-
-for index,b in enumerate(data):
-    positions[int(b[0])] = (index,b)
-
-infile = open("impute1K.impute.legend")
-header=infile.readline()
-outlegend = open("match1K.legend","w")
-outlegend.write(header)
-
-seen=set()
-indices=dict()
-print "=============================\nSNPs present in both"
-print "-----------------------------"
-for linenum,a in enumerate(infile):
-    ID,pos,allele0,allele1 = a.strip().split()
-    if int(pos) in positions:
-        outlegend.write(a)
-        print ID,pos,allele0,allele1,"| HMERF: "," ".join(v for v in positions[int(pos)][1])
-        seen.add(int(pos))
-        indices[linenum] = ([allele0,allele1],positions[int(pos)][0])
-   
-
-infile.close()
-outlegend.close()
-
-missing=[]
-print "=============================\nMissing in 1K"
-print "-----------------------------"
-
-for k,v in positions.iteritems():
-    if k not in seen:
-        missing.append(positions[k])
-        print " ".join(b for b in v[1])
-
-seen.add(179410829)
-pos = [s for s in seen]
-pos.sort()
-print pos
-
-for p in pos:
-    if p in seen:
-        outHMERF.write(",".join(v for v in positions[p][1])+"\n")
-
-outHMERF.close()
-
-missing=sorted(missing)
-print "============================="
-# now lets try to filter the data
-infile = open("impute1K.impute.hap")
-outfile = open("match1K","w")
-for index,line in enumerate(infile):
-    if index in indices:
-        b = line.strip().split()
-        code =   indices[index][0]
-        outfile.write(" ".join(code[int(a)] for a in b)+"\n")
-
-outfile.close()
-infile.close()
+```{r phase_1_table}
+pander(summary3$missing, caption="Present in HMERF and missing in 1K Genomes", split.table=Inf)
+pander(summary3$matching, caption="Present in HMERF and 1K", split.table=Inf)
 ```
 
-Convert the last code into R functions
 
-
-```{r extract_positionsr}
-library(data.table)
-library(pander)
-data_hmerf <- fread("HMERF_Haplotype.csv")
-setkey(data_hmerf, position)
-data_1K <- fread("tmpfiles/impute1K1.impute.legend")
-setkey(data_1K, pos)
-matching_positions <- data_hmerf[data_1K, nomatch=0]
-fwrite(matching_positions, file = "tmpfiles/HMERFmatch1K.csv")
-
-d <- rbind(matching_positions, data_hmerf[position==179410829], fill=TRUE)
-setkey(d, position)
-
-fwrite(
-  matching_positions[,.(ID, pos=position, allele0, allele1)],
-  file="tmpfiles/match1K.legend"
-)
-
-pander(matching_positions, caption="Present in HMERF and 1K", split.table=Inf)
-
-missing <- data_hmerf[!(position %in% data_1K$pos)]
-pander(data.table(missing), caption="Present in HMERF and missing in 1K Genomes")
-
-
-
-seen.add(179410829)
-pos = [s for s in seen]
-pos.sort()
-print pos
-
-for p in pos:
-    if p in seen:
-        outHMERF.write(",".join(v for v in positions[p][1])+"\n")
-
-outHMERF.close()
-
-missing=sorted(missing)
-print "============================="
-# now lets try to filter the data
-infile = open("impute1K.impute.hap")
-outfile = open("match1K","w")
-for index,line in enumerate(infile):
-    if index in indices:
-        b = line.strip().split()
-        code =   indices[index][0]
-        outfile.write(" ".join(code[int(a)] for a in b)+"\n")
-
-outfile.close()
-infile.close()
-```
-
+So have have `r nrow(summary1$matching)` SNPs for phase 1 and `r nrow(summary3$matching)` for phase 3.
 
 
 ### Prepare data for PHASE
-
 
 ```{r transform_input_for_phase}
 source("Transform_PHASE.R")
@@ -253,7 +150,7 @@ We now have
 ### Run PHASE
 
 ```{r runphase, cache=TRUE}
-system2("PHASE",args=c("-kphase1K.known","phase1K.inp","phase1K.out"), stdout = "phase.stdout", stderr = "phase.stderr")
+system2("PHASE",args=c("-ktmpfiles/phase1k_p1.known","tmpfiles/phase1k_p1.inp","tmpfiles/phase1k_p1.out"), stdout = "phase.stdout", stderr = "phase.stderr")
 ```
 
 ### Load the results
