@@ -60,7 +60,8 @@ positions_HMERF <- read.csv("data/HMERF_Haplotype.csv")
 we have read `r nrow(positions_1K1)` positions from the phase 1 1000 genomes and `r nrow(positions_1K3)` 
 from the phase 3.
 
-Use I used python before to strip out the usable SNPs from the 1000 genomes, but I want to make the code more general 
+I used python before to strip out the usable SNPs from the 1000 genomes, 
+but I want to make the code more general 
 so I use `data.table` within R.
 
 
