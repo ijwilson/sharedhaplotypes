@@ -1,14 +1,17 @@
 #!/usr/bin/Rscript
 
 ## output in hapmap PHASE output.   We want to be able to use the 1000 genomes
-## data to get a nice picture of the phasing information to furhter inform these data
+## data to get a nice picture of the phasing information to further inform these data
 
 ## this script outputs data in the haps format with an associated legend file.
 
+
+
+
 ped <- read.csv("phase1_samples_integrated_20101123.ped",sep="\t",header=TRUE,quote="")
-NoParents <- ped[,3]=="0" & ped[,4]=="0"
+no_parents <- ped[,3]=="0" & ped[,4]=="0"
 RequiredPopulations = c("CEU","GBR")
-ped = ped[NoParents &  ped$Population %in% RequiredPopulations,]
+ped = ped[no_parents &  ped$Population %in% RequiredPopulations,]
 SampleNames <- scan("impute1K.impute.hap.indv",what=character(0))
 keepSamples = SampleNames %in% ped[,2]
 doubleKeepSamples <- rep(keepSamples,rep(2,length(keepSamples)))

@@ -1,41 +1,22 @@
-## function to read PHASE pairs output
-readpairs <- function(filename) {
-  conn = file(filename,"r")
-  res <- readLines(conn)
-  inds = grep("IND",res)
-  indnames <- substring(res[inds],6)
-  n <- diff(c(inds,length(res)+1))-1
-  res <- gsub("\\s","",res[-inds])
-  namecol <- rep(indnames,n)
-  data <- matrix(unlist(strsplit(res,",")),ncol=3,byrow=T)
-  r = data.frame(cbind(namecol,data))
-  r[,4] <- as.numeric(paste(r[,4]))
-  close(conn)
-  return(r)
-}
-# function to split pairs data by a single positions
-splitter <- function(pairdata,splits=c(1)) {
-  nsplit <- length(splits)+1
-  l <- nchar(paste(pairdata[1,3]))
-  splitvecstart <- c(1,splits)
-  splitvecend <- c(splits,l)
-  pd <- rep(paste(pairdata[,2]),rep(nsplit,nrow(pairdata)))
-  s1 <- substring(pd,splitvecstart,splitvecend)
-  pd1 <- rep(paste(pairdata[,3]),rep(nsplit,nrow(pairdata)))
-  s1 <- substring(pd,splitvecstart,splitvecend)
-  data.frame(pairdata,hap1 = matrix(s1,ncol=nsplit,byrow=T),hap2 = matrix(s1,ncol=nsplit,byrow=T))
-}
-
+source("read_phase_functions.R")
+# Read the pairs output.  We have columns
 pairs <- readpairs("phase1K.out_pairs")
+colnames(pairs) <- c("name", "hap1", "hap2", "pprob")
+## Split the phased output 
 splitter(pairs,c(4,8,11))
-
+## The first row that begins HG 
 w = min(grep("HG",pairs[,1]))
-
-bcase <- mapply(function(x,y) x[1:(y[1]-1),],b,w,SIMPLIFY=FALSE)
+## Get the raw haplotype frequencies
+## These are the frequencies from the 
+raw <- as.matrix(read.table("match1K"))
+raw <- t(raw)
+b = apply(raw,1,paste,collapse="")
+##
+bcase <- mapply(function(x,y) x[1:(y[1]-1),], b, w, SIMPLIFY=FALSE)
 casefreq(bcase[[1]],3,nsplit=4)
 casefreq(bcase[[1]],2,nsplit=4)
 
-bcontrol <- mapply(function(x,y){return(x[y[1]:y[2],])},b,w,SIMPLIFY=FALSE)
+bcontrol <- mapply(function(x,y){return(x[y[1]:y[2],])},b, w, SIMPLIFY=FALSE)
 tb1 = table(c(paste(bcontrol[[1]][,7]),paste(bcontrol[[1]][,11])))
 table(c(paste(bcontrol[[1]][,7]),paste(bcontrol[[1]][,12])))
 

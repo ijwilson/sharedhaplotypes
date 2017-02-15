@@ -1,0 +1,191 @@
+---
+title: "Shared Haplotypes around a mutation"
+author: "Ian Wilson"
+date: "30 January 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#### obtain the pedigree information for the 1000 genomes samples, both phase 1 and phase 3
+
+```{r readped}
+if (!dir.exists("./tmpfiles")) dir.create("./tmpfiles/")
+ped_phase1 <- read.csv("ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20110521/supporting/phase1_samples_integrated_20101123.ped", header=TRUE, sep="\t", quote="")
+ped_phase3 <- read.csv("ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/integrated_call_samples_v2.20130502.ALL.ped", header=TRUE, sep="\t", quote="")
+
+if (!file.exists("data/phase1_samples_integrated_20101123.ped")) {
+  download.file("ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20110521/supporting/phase1_samples_integrated_20101123.ped","data/phase1_samples_integrated_20101123.ped")
+  download.file("ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/integrated_call_samples_v2.20130502.ALL.ped", "data/integrated_call_samples_v2.20130502.ALL.ped")
+}
+```
+
+## use tabix to get a copy of the data between positions 178404570 and 179734924 on chromosome 2
+
+```{r trylocaltabix, eval=FALSE}
+library(Rsamtools)
+url <- "ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/phase1/analysis_results/integrated_call_sets/ALL.chr2.integrated_phase1_v3.20101123.snps_indels_svs.genotypes.vcf.gz"
+range <- GRanges("2", IRanges(178404570,179734924))
+tb <- TabixFile(url)
+countTabix(open(tb), range=range)
+scanTabix(open(tb), )
+```
+I can't make this work so better to use the command line for this
+
+#### phase 1 and phase 3
+
+```
+tabix -fh ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/phase1/analysis_results/integrated_call_sets/ALL.chr2.integrated_phase1_v3.20101123.snps_indels_svs.genotypes.vcf.gz 2:178404570-179734924 > tmpfiles/temporary1.vcf
+tabix -fh  ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/ALL.chr2.phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcf.gz 2:178404570-179734924 > tmpfiles/temporary3.vcf
+```
+
+#### transform to get phased output in IMPUTE format
+
+```
+vcftools --phased --vcf tmpfiles/temporary3.vcf --IMPUTE --out tmpfiles/impute1K3 
+vcftools --phased --vcf tmpfiles/temporary1.vcf --IMPUTE --out tmpfiles/impute1K1 
+rm tmpfiles/temporary?.vcf 
+```
+
+Examine these positions a bit more
+
+```{r read_positions}
+positions_1K1 <- read.table("tmpfiles/impute1K1.impute.legend", header=TRUE)
+positions_1K3 <- read.table("tmpfiles/impute1K3.impute.legend", header=TRUE)
+
+positions_HMERF <- read.csv("data/HMERF_Haplotype.csv")
+```
+we have read `r nrow(positions_1K1)` positions from the phase 1 1000 genomes and `r nrow(positions_1K3)` 
+from the phase 3.
+
+Use I used python before to strip out the usable SNPs from the 1000 genomes, but I want to make the code more general 
+so I use `data.table` within R.
+
+
+```{r extract_positions}
+library(data.table)
+library(pander)
+
+extract_positions <- function(target_file, dbstem, out, mutation_position=179410829, mutation_wild_type="A") {
+#  target_file= "data/HMERF_Haplotype.csv" 
+#  dbstem = "tmpfiles/impute1K1.impute" 
+#  out= "match1K_phase1" 
+#  mutation_position=179410829
+ # mutation_wild_type="A"
+  data_hmerf <- fread(target_file, showProgress = FALSE)
+  setkey(data_hmerf, position)
+
+  data_1K <- fread(paste(dbstem, "legend", sep="."), showProgress = FALSE)
+  data_1K[, rownum := 1:nrow(data_1K)]
+  setkey(data_1K, pos)
+  matching_positions <- data_hmerf[data_1K, nomatch=0]  
+  missing_positions <- data_hmerf[!(position %in% data_1K$pos)]
+
+  code <- list()
+  for (i in 1:nrow(matching_positions)) 
+    code[[i]] <- c(matching_positions$allele0[i], matching_positions$allele1[i])
+
+  sample_names <-  scan(paste(dbstem,"hap.indv",sep="."), what=character(0))
+  cat(sample_names, "\n",sep="\n", file=paste("tmpfiles/", out,".individuals", sep="" ))
+  fread(paste(dbstem, "hap.indv", sep="."), showProgress = FALSE)
+  
+  all_1K <- fread(paste(dbstem, "hap", sep="."), showProgress = FALSE)
+  all_1K <- all_1K[matching_positions$rownum,]
+
+  genotypes <- matrix("", nrow=nrow(matching_positions)+1, ncol=ncol(all_1K))
+  for (index in 1:nrow(matching_positions)) {
+    row <- as.integer(all_1K[index, ])+1
+    genotypes[index,] <- code[[index]][row]
+  }
+  genotypes[nrow(matching_positions)+1, ] <- mutation_wild_type   ## add mutation
+  
+  mp <- copy(matching_positions)                         ## need to make a copy so that I can remove columns
+  add <- data_hmerf[position==mutation_position]
+  allele <- strsplit(as.character(add[,3]),'')[[1]]
+  mutation_variant <- ifelse(mutation_wild_type==allele[1], allele[2], allele[1])
+  add$allele0 <- mutation_wild_type
+  add$allele1 <- mutation_variant 
+  add$ID <- "targetmutation"
+
+  mp <- rbind(mp, add, fill=TRUE )
+  o <- order(mp$position)
+  genotypes <- genotypes[o,]
+  mp <- mp[o,]
+  
+   
+  fwrite(
+    mp[,.(ID, pos=position, allele0, allele1)],
+    file=paste("tmpfiles/", out, ".legend", sep=""), showProgress = FALSE
+  )
+  
+  mp[, c("ID","allele0","allele1","rownum") := NULL]     ## And put the mutation back
+  fwrite(mp, file = paste("tmpfiles/HMERF", out, ".csv", sep=""), showProgress = FALSE)
+  fwrite(data.table(genotypes), sep=" ", col.names = FALSE, file=paste("tmpfiles", out, sep="/"))
+  list(missing=missing_positions, matching=matching_positions)
+}
+
+
+dbstem1 <- "tmpfiles/impute1K1.impute"
+out <- "match1K3"
+target <- "data/HMERF_Haplotype.csv" 
+options(scipen=999)
+
+summary1 <- extract_positions(target, "tmpfiles/impute1K1.impute", "match1K_phase1")
+summary3 <- extract_positions(target, "tmpfiles/impute1K3.impute", "match1K_phase3")
+
+```
+
+## Phase 1 data
+
+```{r phase_1_table}
+pander(summary1$missing, caption="Present in HMERF and missing in 1K Genomes", split.table=Inf)
+pander(summary1$matching, caption="Present in HMERF and 1K", split.table=Inf)
+```
+## Phase 3 data
+
+```{r phase_3_table}
+pander(summary3$missing, caption="Present in HMERF and missing in 1K Genomes", split.table=Inf)
+pander(summary3$matching, caption="Present in HMERF and 1K", split.table=Inf)
+```
+
+
+So have have `r nrow(summary1$matching)` SNPs for phase 1 and `r nrow(summary3$matching)` for phase 3.
+
+
+### Prepare data for PHASE
+
+```{r transform_input_for_phase}
+source("Transform_PHASE.R")
+```
+We now have 
+
+### Run PHASE
+
+```{r runphase, cache=TRUE, eval=FALSE}
+system2("PHASE",args=c("-ktmpfiles/phase1k_p1.known","tmpfiles/phase1k_p1.inp","tmpfiles/phase1k_p1.out"), stdout = "phase.stdout", stderr = "phase.stderr")
+system2("PHASE",args=c("-ktmpfiles/phase1k_p3.known","tmpfiles/phase1k_p3.inp","tmpfiles/phase1k_p3.out"), stdout = "phase.3.stdout", stderr = "phase.3.stderr")
+```
+
+### Load the results
+
+```{r load_results}
+source("read_phase_functions.R")
+# Read the pairs output.  We have columns
+pairs <- readpairs("tmpfiles/phase1k_p3.out_pairs")
+colnames(pairs) <- c("name", "hap1", "hap2", "pprob")
+## These are all the pairs, we need to extract our hmerf samples
+hmerf_samples <- colnames(hmerf)[-c(1:2)]
+hmerf_pairs <- pairs[pairs$name %in% hmerf_samples,]
+control_pairs <- pairs[!(pairs$name %in% hmerf_samples),]
+## These pairs all have the same posterior probalility - which
+## is just as well as they are all supposed to be phased.
+## Get raw data
+#raw <- t(as.matrix(read.table("match1K", stringsAsFactors = FALSE)))
+
+## Split the phased output.
+
+
+
+```

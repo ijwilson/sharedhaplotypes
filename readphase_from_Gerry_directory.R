@@ -54,7 +54,7 @@ splitter4 <- function(pairdata,wh=1,ll=8,left=11,right=18) {
 
 
 filenames <- c("../PHASE/phase1K1.out_pairs","../PHASE/phase1K2.out_pairs")
-a <- lapply(filenames,readpairs)
+a <- lapply(filenames, readpairs)
 w <- lapply(a,function(x) c(min(grep("HG",x[,1])),nrow(x)))
 #b <- lapply(a,function(x) cbind(x,splitter(x,1),splitter(x,2)))
 b <- lapply(a,function(x) cbind(x,splitter4(x,1,9,12,18),splitter4(x,2,9,12,18)))
