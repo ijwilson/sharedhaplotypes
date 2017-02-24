@@ -11,7 +11,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 #### obtain the pedigree information for the 1000 genomes samples, both phase 1 and phase 3
 
-```{r readped}
+```{r readped, cache=TRUE}
 if (!dir.exists("./tmpfiles")) dir.create("./tmpfiles/")
 ped_phase1 <- read.csv("ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20110521/supporting/phase1_samples_integrated_20101123.ped", header=TRUE, sep="\t", quote="")
 ped_phase3 <- read.csv("ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/integrated_call_samples_v2.20130502.ALL.ped", header=TRUE, sep="\t", quote="")
@@ -36,17 +36,16 @@ I can't make this work so better to use the command line for this
 
 #### phase 1 and phase 3
 
-```
-tabix -fh ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/phase1/analysis_results/integrated_call_sets/ALL.chr2.integrated_phase1_v3.20101123.snps_indels_svs.genotypes.vcf.gz 2:178404570-179734924 > tmpfiles/temporary1.vcf
-tabix -fh  ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/ALL.chr2.phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcf.gz 2:178404570-179734924 > tmpfiles/temporary3.vcf
+```{r runtabix, cache=TRUE}
+system2("tabix", c("-fh", "ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/phase1/analysis_results/integrated_call_sets/ALL.chr2.integrated_phase1_v3.20101123.snps_indels_svs.genotypes.vcf.gz", "2:178404570-179734924" ), stdout="tmpfiles/temporary1.vcf")
+system2("tabix", c("-fh", "ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/ALL.chr2.phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcf.gz", "2:178404570-179734924" ), stdout="tmpfiles/temporary3.vcf")
 ```
 
 #### transform to get phased output in IMPUTE format
 
-```
-vcftools --phased --vcf tmpfiles/temporary3.vcf --IMPUTE --out tmpfiles/impute1K3 
-vcftools --phased --vcf tmpfiles/temporary1.vcf --IMPUTE --out tmpfiles/impute1K1 
-rm tmpfiles/temporary?.vcf 
+```{r runvcftools, cache=TRUE}
+system2("vcftools", c("--phased", "--vcf","tmpfiles/temporary3.vcf","--IMPUTE", "--out","tmpfiles/impute1K3")) 
+system2("vcftools", c("--phased", "--vcf","tmpfiles/temporary1.vcf","--IMPUTE", "--out","tmpfiles/impute1K1")) 
 ```
 
 Examine these positions a bit more
@@ -54,7 +53,6 @@ Examine these positions a bit more
 ```{r read_positions}
 positions_1K1 <- read.table("tmpfiles/impute1K1.impute.legend", header=TRUE)
 positions_1K3 <- read.table("tmpfiles/impute1K3.impute.legend", header=TRUE)
-
 positions_HMERF <- read.csv("data/HMERF_Haplotype.csv")
 ```
 we have read `r nrow(positions_1K1)` positions from the phase 1 1000 genomes and `r nrow(positions_1K3)` 
@@ -164,7 +162,7 @@ We now have
 
 ### Run PHASE
 
-```{r runphase, cache=TRUE, eval=FALSE}
+```{r runphase, cache=TRUE}
 system2("PHASE",args=c("-ktmpfiles/phase1k_p1.known","tmpfiles/phase1k_p1.inp","tmpfiles/phase1k_p1.out"), stdout = "phase.stdout", stderr = "phase.stderr")
 system2("PHASE",args=c("-ktmpfiles/phase1k_p3.known","tmpfiles/phase1k_p3.inp","tmpfiles/phase1k_p3.out"), stdout = "phase.3.stdout", stderr = "phase.3.stderr")
 ```
