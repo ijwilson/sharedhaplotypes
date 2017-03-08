@@ -4,7 +4,7 @@
 .Ruserdata
 *.html
 *.stderr
-shared_haplotype_cache
+shared_haplotypes_cache
 *.stdout
 *.tbi
 integrated_call_samples_v2.20130502.ALL.ped
